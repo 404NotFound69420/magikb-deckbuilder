@@ -1,5 +1,5 @@
 import express from "express";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import { query } from "../db.js";
 import { signJwt } from "../auth.js";
 import { registerSchema, loginSchema } from "../validators.js";
