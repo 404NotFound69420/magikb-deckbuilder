@@ -21,13 +21,13 @@ function opponentOf(p) {
   return p === "p1" ? "p2" : "p1";
 }
 
-// ✅ NEW: put a card into the player's discard pile
+// Put a card into the player's discard pile
 function discardCard(game, slot, cardId) {
   if (!game.discard) game.discard = { p1: [], p2: [] };
   game.discard[slot].push(cardId);
 }
 
-// ✅ NEW: draw 1 card; if deck empty, recycle discard into deck (shuffled)
+// Draw 1 card; if deck empty, recycle discard into deck (shuffled)
 function drawOne(game, slot) {
   if (game.decks[slot].length === 0 && game.discard?.[slot]?.length > 0) {
     game.decks[slot] = shuffle(game.discard[slot]);
@@ -47,10 +47,10 @@ export async function createMatch(userId, deckId) {
   const matchId = crypto.randomUUID();
 
   // verify deck belongs to user
-  const deckRes = await query("SELECT id FROM decks WHERE id=$1 AND user_id=$2", [
-    deckId,
-    userId,
-  ]);
+  const deckRes = await query(
+    "SELECT id FROM decks WHERE id=$1 AND user_id=$2",
+    [deckId, userId]
+  );
   if (deckRes.rowCount === 0) throw new Error("Deck not found");
 
   const deckCards = await query(
@@ -93,10 +93,10 @@ export async function joinMatch(userId, matchId, deckId) {
   if (state.players.p1.userId === userId) throw new Error("You cannot join your own match");
 
   // verify deck
-  const deckRes = await query("SELECT id FROM decks WHERE id=$1 AND user_id=$2", [
-    deckId,
-    userId,
-  ]);
+  const deckRes = await query(
+    "SELECT id FROM decks WHERE id=$1 AND user_id=$2",
+    [deckId, userId]
+  );
   if (deckRes.rowCount === 0) throw new Error("Deck not found");
 
   const deckCards = await query(
@@ -129,7 +129,7 @@ export async function joinMatch(userId, matchId, deckId) {
     decks: { p1: p1Deck, p2: p2Deck },
     hands: { p1: p1Deck.splice(0, 7), p2: p2Deck.splice(0, 7) },
     boards: { p1: [], p2: [] },
-    discard: { p1: [], p2: [] }, // ✅ discard piles
+    discard: { p1: [], p2: [] },
     log: [],
   };
 
@@ -144,6 +144,7 @@ export async function joinMatch(userId, matchId, deckId) {
     matchId,
     JSON.stringify(state),
   ]);
+
   return state;
 }
 
@@ -192,7 +193,7 @@ export async function playCard(matchId, userId, handIndex) {
   // remove from hand
   hand.splice(handIndex, 1);
 
-  // ✅ NEW: put played card into discard pile
+  // discard played card (spell or minion card itself)
   discardCard(state.game, playerSlot, cardId);
 
   if (card.type === "MINION") {
@@ -214,10 +215,7 @@ export async function playCard(matchId, userId, handIndex) {
       state.game.hp[playerSlot] += effect.amount;
       state.game.log.push(`${playerSlot} cast ${card.name} heal ${effect.amount}`);
     } else if (effect.kind === "DRAW") {
-      // ✅ NEW: use drawOne() so it recycles discard if needed
-      for (let i = 0; i < effect.amount; i++) {
-        drawOne(state.game, playerSlot);
-      }
+      for (let i = 0; i < effect.amount; i++) drawOne(state.game, playerSlot);
       state.game.log.push(`${playerSlot} cast ${card.name} draw ${effect.amount}`);
     } else if (effect.kind === "DAMAGE_ALL") {
       for (const m of state.game.boards[opp]) m.hp -= effect.amount;
@@ -236,8 +234,11 @@ export async function playCard(matchId, userId, handIndex) {
   if (state.game.hp.p1 <= 0 || state.game.hp.p2 <= 0) {
     state.status = "ENDED";
     const winner = state.game.hp.p1 <= 0 ? "p2" : "p1";
+    state.winner = winner;
+
     const winnerId = state.players[winner].userId;
     state.game.log.push(`${winner} wins!`);
+
     await query("UPDATE matches SET status='ENDED', winner_id=$2 WHERE id=$1", [
       matchId,
       winnerId,
@@ -292,6 +293,7 @@ export async function attack(matchId, userId, attackerIndex, target) {
     const defender = enemyBoard[idx];
     if (!defender) throw new Error("Invalid target minion");
 
+    // simultaneous damage
     defender.hp -= attacker.atk;
     attacker.hp -= defender.atk;
 
@@ -301,6 +303,7 @@ export async function attack(matchId, userId, attackerIndex, target) {
       `${playerSlot} minion attacked enemy minion (${attacker.atk} vs ${defender.atk})`
     );
 
+    // remove dead minions
     state.game.boards[playerSlot] = state.game.boards[playerSlot].filter((m) => m.hp > 0);
     state.game.boards[opp] = state.game.boards[opp].filter((m) => m.hp > 0);
   } else {
@@ -311,8 +314,11 @@ export async function attack(matchId, userId, attackerIndex, target) {
   if (state.game.hp.p1 <= 0 || state.game.hp.p2 <= 0) {
     state.status = "ENDED";
     const winner = state.game.hp.p1 <= 0 ? "p2" : "p1";
+    state.winner = winner;
+
     const winnerId = state.players[winner].userId;
     state.game.log.push(`${winner} wins!`);
+
     await query("UPDATE matches SET status='ENDED', winner_id=$2 WHERE id=$1", [
       matchId,
       winnerId,
@@ -350,7 +356,7 @@ export async function endTurn(matchId, userId) {
   state.game.maxMana[next] = Math.min(10, state.game.maxMana[next] + 1);
   state.game.mana[next] = state.game.maxMana[next];
 
-  // ✅ NEW: draw 1 using drawOne() so it recycles discard if needed
+  // draw 1 (recycles discard if needed)
   drawOne(state.game, next);
 
   // enable attacks for next player's minions
@@ -362,5 +368,6 @@ export async function endTurn(matchId, userId) {
     matchId,
     JSON.stringify(state),
   ]);
+
   return state;
 }
