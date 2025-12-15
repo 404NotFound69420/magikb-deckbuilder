@@ -34,6 +34,7 @@ export const api = {
   register: (body) => req("/api/auth/register", { method:"POST", body: JSON.stringify(body) }),
   login: (body) => req("/api/auth/login", { method:"POST", body: JSON.stringify(body) }),
   cards: () => req("/api/cards"),
+  card: (id) => req(`/api/cards/${id}`),
   myDecks: () => req("/api/decks"),
   createDeck: (name) => req("/api/decks", { method:"POST", body: JSON.stringify({ name }) }),
   getDeck: (deckId) => req(`/api/decks/${deckId}`),

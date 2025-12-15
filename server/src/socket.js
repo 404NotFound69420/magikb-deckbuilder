@@ -11,18 +11,32 @@ function authSocket(socket) {
 
 export function setupSockets(httpServer) {
   const io = new Server(httpServer, {
-    cors: { origin: process.env.CLIENT_ORIGIN, methods: ["GET", "POST"] }
+    cors: { origin: process.env.CLIENT_ORIGIN, methods: ["GET", "POST"] },
   });
 
   io.on("connection", (socket) => {
     let user = null;
-    try { user = authSocket(socket); }
-    catch { socket.disconnect(true); return; }
+    try {
+      user = authSocket(socket);
+    } catch {
+      socket.disconnect(true);
+      return;
+    }
 
     socket.on("match:joinRoom", async ({ matchId }) => {
       socket.join(matchId);
       const state = await getMatchState(matchId);
       socket.emit("match:state", { state });
+    });
+
+    // optional helper if you want to force-sync
+    socket.on("match:sync", async ({ matchId }) => {
+      try {
+        const state = await getMatchState(matchId);
+        io.to(matchId).emit("match:state", { state });
+      } catch (e) {
+        socket.emit("match:error", { error: String(e.message || e) });
+      }
     });
 
     socket.on("match:playCard", async ({ matchId, handIndex }) => {
@@ -34,9 +48,10 @@ export function setupSockets(httpServer) {
       }
     });
 
-    socket.on("match:attack", async ({ matchId, attackerIndex }) => {
+    // ✅ FIX: accept target + pass it into engine.attack(...)
+    socket.on("match:attack", async ({ matchId, attackerIndex, target }) => {
       try {
-        const state = await attack(matchId, user.id, attackerIndex);
+        const state = await attack(matchId, user.id, attackerIndex, target);
         io.to(matchId).emit("match:state", { state });
       } catch (e) {
         socket.emit("match:error", { error: String(e.message || e) });
